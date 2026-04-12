@@ -1,5 +1,28 @@
-serviceAccountKey.json
-__pycache__/
-*.pyc
-venv/
+# Чувствительные файлы
 .env
+serviceAccountKey.json
+user_settings.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+
+# Flask
+instance/
+.webassets-cache
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
