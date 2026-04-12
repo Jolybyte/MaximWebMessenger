@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#4CAF50">
+    <title>Maxim Messenger - Чат</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Основная область чата -->
+        <div class="chat-area">
+            <div class="chat-header">
+                <div class="chat-header-left">
+                    <button id="mobile-sidebar-toggle" class="mobile-sidebar-toggle" aria-label="Открыть меню участников">
+                        ☰
+                    </button>
+                    <h2>💬 Общий чат</h2>
+                </div>
+                <div class="chat-header-right">
+                    <span class="online-count" id="online-count">0 онлайн</span>
+                </div>
+            </div>
+            
+            <div id="messages-container" class="messages-container"></div>
+            
+            <div class="input-area">
+                <button id="attach-btn" class="attach-btn" title="Прикрепить изображение">📎</button>
+                <textarea id="message-input" placeholder="Напишите сообщение... (Enter для отправки)" rows="1"></textarea>
+                <button id="send-btn" class="send-btn">📤</button>
+            </div>
+        </div>
+        
+        <!-- Боковая панель с участниками -->
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="user-info">
+                    <div class="user-avatar">
+                        <img id="user-avatar" src="" alt="Avatar">
+                    </div>
+                    <div class="user-details">
+                        <span id="username-display">{{ user.username }}</span>
+                        <span class="user-status">🟢 онлайн</span>
+                    </div>
+                    <button class="menu-btn" id="menu-btn">⋮</button>
+                </div>
+                <button id="close-sidebar-btn" class="close-sidebar-btn" aria-label="Закрыть">✕</button>
+            </div>
+            
+            <div class="separator"></div>
+            
+            <div class="users-section">
+                <h3>👥 Участники</h3>
+                <div id="users-list" class="users-list"></div>
+            </div>
+        </div>
+        
+        <!-- Оверлей для закрытия меню на мобильных -->
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+    </div>
+    
+    <div id="menu-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Меню пользователя</h3>
+            <p>Пользователь: <strong id="modal-username"></strong></p>
+            <button id="change-avatar-menu" class="btn-secondary">📷 Сменить аватарку</button>
+            <button id="logout-btn" class="btn-secondary">🚪 Выйти</button>
+            <button id="delete-account-btn" class="btn-danger">⚠️ Удалить аккаунт</button>
+            <button id="close-modal" class="btn-secondary">Отмена</button>
+        </div>
+    </div>
+    
+    <div id="image-modal" class="modal" style="display: none;">
+        <div class="modal-content image-modal">
+            <img id="full-image" src="" alt="Full size">
+            <button id="close-image-modal" class="close-btn">✖</button>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        let currentUser = {{ user|tojson }};
+        let typingTimeout = null;
+        let isTyping = false;
+        
+        // Загрузка истории сообщений
+        async function loadMessages() {
+            try {
+                const response = await fetch('/api/messages');
+                const data = await response.json();
+                if (data.messages) {
+                    data.messages.forEach(message => displayMessage(message));
+                    scrollToBottom();
+                }
+            } catch (error) {
+                console.error('Error loading messages:', error);
+            }
+        }
+        
+        // Загрузка пользователей
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                const data = await response.json();
+                if (data.users) {
+                    updateUsersList(data.users);
+                    updateOnlineCount(data.users);
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+            }
+        }
+        
+        // Подсчет онлайн пользователей
+        function updateOnlineCount(users) {
+            let onlineCount = 0;
+            for (const [userId, userData] of Object.entries(users)) {
+                if (userData.online && userId !== currentUser.id) {
+                    onlineCount++;
+                }
+            }
+            const onlineCountElement = document.getElementById('online-count');
+            if (onlineCountElement) {
+                onlineCountElement.textContent = `${onlineCount} онлайн`;
+            }
+        }
+        
+        // Обновление списка пользователей
+        function updateUsersList(users) {
+            const usersList = document.getElementById('users-list');
+            usersList.innerHTML = '';
+            
+            // Сначала добавляем текущего пользователя
+            const currentUserItem = document.createElement('div');
+            currentUserItem.className = 'user-item current-user';
+            currentUserItem.innerHTML = `
+                <div class="user-avatar-small">
+                    <img src="${currentUser.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E'}" alt="${currentUser.username}">
+                </div>
+                <div class="user-info-text">
+                    <span class="username">${escapeHtml(currentUser.username)} (Вы)</span>
+                    <span class="status online">🟢 онлайн</span>
+                </div>
+            `;
+            usersList.appendChild(currentUserItem);
+            
+            // Добавляем остальных пользователей
+            for (const [userId, userData] of Object.entries(users)) {
+                if (userId !== currentUser.id) {
+                    const userItem = document.createElement('div');
+                    userItem.className = 'user-item';
+                    userItem.innerHTML = `
+                        <div class="user-avatar-small">
+                            <img src="${userData.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E'}" alt="${userData.username}">
+                        </div>
+                        <div class="user-info-text">
+                            <span class="username">${escapeHtml(userData.username)}</span>
+                            <span class="status ${userData.online ? 'online' : 'offline'}">
+                                ${userData.online ? '🟢 онлайн' : '⚫ оффлайн'}
+                            </span>
+                        </div>
+                    `;
+                    usersList.appendChild(userItem);
+                }
+            }
+        }
+        
+        // Отображение сообщения
+        function displayMessage(message) {
+            const container = document.getElementById('messages-container');
+            const isOwnMessage = message.user_id === currentUser.id;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isOwnMessage ? 'own-message' : 'other-message'}`;
+            
+            const time = new Date(message.timestamp).toLocaleTimeString('ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            let contentHtml = '';
+            
+            if (message.image_base64) {
+                contentHtml += `<img src="${message.image_base64}" class="message-image" onclick="showFullImage('${message.image_base64}')">`;
+            }
+            
+            if (message.text) {
+                contentHtml += `<div class="message-text">${escapeHtml(message.text)}</div>`;
+            }
+            
+            messageDiv.innerHTML = `
+                <div class="message-avatar">
+                    <img src="${message.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E'}" alt="${message.username}">
+                </div>
+                <div class="message-content">
+                    ${!isOwnMessage ? `<div class="message-sender">${escapeHtml(message.username)}</div>` : ''}
+                    <div class="message-bubble">
+                        ${contentHtml}
+                        <div class="message-time">${time}</div>
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(messageDiv);
+            scrollToBottom();
+        }
+        
+        // Отправка сообщения
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            socket.emit('send_message', {text});
+            input.value = '';
+            input.style.height = 'auto';
+            
+            if (isTyping) {
+                socket.emit('typing', {is_typing: false});
+                isTyping = false;
+                if (typingTimeout) clearTimeout(typingTimeout);
+            }
+        }
+        
+        // Отправка изображения
+        async function sendImage(file) {
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Изображение слишком большое. Максимальный размер 5MB');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                socket.emit('send_message', {image_base64: e.target.result});
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // Прокрутка вниз
+        function scrollToBottom() {
+            const container = document.getElementById('messages-container');
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // Эскейп HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Показ полного изображения
+        function showFullImage(imageSrc) {
+            const modal = document.getElementById('image-modal');
+            const fullImage = document.getElementById('full-image');
+            fullImage.src = imageSrc;
+            modal.style.display = 'flex';
+        }
+        
+        // Управление мобильным меню
+        function openSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.add('open');
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.remove('open');
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+        
+        // Socket.io события
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+        
+        socket.on('new_message', (message) => {
+            displayMessage(message);
+        });
+        
+        socket.on('user_joined', (data) => {
+            loadUsers();
+            showNotification(`${data.user.username} присоединился к чату`);
+        });
+        
+        socket.on('user_left', (data) => {
+            loadUsers();
+        });
+        
+        socket.on('user_updated', (data) => {
+            if (data.user_id === currentUser.id) {
+                currentUser = data.user;
+                document.getElementById('user-avatar').src = currentUser.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E';
+            }
+            loadUsers();
+        });
+        
+        socket.on('user_typing', (data) => {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (data.is_typing) {
+                if (!typingIndicator) {
+                    const indicator = document.createElement('div');
+                    indicator.id = 'typing-indicator';
+                    indicator.className = 'typing-indicator';
+                    indicator.textContent = `${data.username} печатает...`;
+                    const container = document.getElementById('messages-container');
+                    container.appendChild(indicator);
+                    scrollToBottom();
+                }
+            } else {
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
+            }
+        });
+        
+        // Показ уведомления
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 10);
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+        
+        // Обработчики UI
+        document.getElementById('send-btn').addEventListener('click', sendMessage);
+        
+        // Кнопка открытия меню
+        const mobileSidebarToggle = document.getElementById('mobile-sidebar-toggle');
+        if (mobileSidebarToggle) {
+            mobileSidebarToggle.addEventListener('click', openSidebar);
+        }
+        
+        // Кнопка закрытия меню
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+        if (closeSidebarBtn) {
+            closeSidebarBtn.addEventListener('click', closeSidebar);
+        }
+        
+        // Оверлей для закрытия
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        if (sidebarOverlay) {
+            sidebarOverlay.addEventListener('click', closeSidebar);
+        }
+        
+        // Обработка Enter
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // Авто-расширение textarea
+        document.getElementById('message-input').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+            
+            if (!isTyping && this.value.trim()) {
+                isTyping = true;
+                socket.emit('typing', {is_typing: true});
+            }
+            
+            if (typingTimeout) clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                if (isTyping) {
+                    isTyping = false;
+                    socket.emit('typing', {is_typing: false});
+                }
+            }, 1000);
+        });
+        
+        // Прикрепление изображения
+        document.getElementById('attach-btn').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) sendImage(file);
+            };
+            input.click();
+        });
+        
+        // Меню пользователя
+        document.getElementById('menu-btn').addEventListener('click', () => {
+            const modal = document.getElementById('menu-modal');
+            document.getElementById('modal-username').textContent = currentUser.username;
+            modal.style.display = 'flex';
+            closeSidebar();
+        });
+        
+        document.getElementById('close-modal').addEventListener('click', () => {
+            document.getElementById('menu-modal').style.display = 'none';
+        });
+        
+        document.getElementById('change-avatar-menu').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    if (file.size > 2 * 1024 * 1024) {
+                        alert('Изображение слишком большое. Максимальный размер 2MB');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            const response = await fetch('/api/update_avatar', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({avatar_base64: e.target.result})
+                            });
+                            const data = await response.json();
+                            if (data.success) {
+                                currentUser.avatar_base64 = e.target.result;
+                                document.getElementById('user-avatar').src = currentUser.avatar_base64;
+                                alert('Аватар успешно обновлен!');
+                                document.getElementById('menu-modal').style.display = 'none';
+                                loadUsers();
+                            }
+                        } catch (error) {
+                            alert('Ошибка при обновлении аватара');
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+            input.click();
+        });
+        
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            if (confirm('Вы уверены, что хотите выйти?')) {
+                try {
+                    await fetch('/api/logout', {method: 'POST'});
+                    window.location.href = '/';
+                } catch (error) {
+                    console.error('Logout error:', error);
+                }
+            }
+        });
+        
+        document.getElementById('delete-account-btn').addEventListener('click', async () => {
+            if (confirm('Вы уверены, что хотите удалить аккаунт?\nВсе ваши сообщения останутся в чате.')) {
+                try {
+                    const response = await fetch('/api/delete_account', {method: 'POST'});
+                    const data = await response.json();
+                    if (data.success) {
+                        window.location.href = '/';
+                    } else {
+                        alert('Ошибка при удалении аккаунта');
+                    }
+                } catch (error) {
+                    alert('Ошибка при удалении аккаунта');
+                }
+            }
+        });
+        
+        document.getElementById('close-image-modal').addEventListener('click', () => {
+            document.getElementById('image-modal').style.display = 'none';
+        });
+        
+        document.getElementById('image-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('image-modal')) {
+                document.getElementById('image-modal').style.display = 'none';
+            }
+        });
+        
+        // Инициализация
+        document.getElementById('user-avatar').src = currentUser.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E';
+        document.getElementById('username-display').textContent = currentUser.username;
+        
+        loadMessages();
+        loadUsers();
+        
+        // Обновление статуса при закрытии страницы
+        window.addEventListener('beforeunload', () => {
+            navigator.sendBeacon('/api/logout');
+        });
+        
+        // Свайп для закрытия меню
+        let touchStartX = 0;
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+        });
+        
+        document.addEventListener('touchend', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('open')) {
+                const touchEndX = e.changedTouches[0].clientX;
+                const diff = touchEndX - touchStartX;
+                if (diff < -50) {
+                    closeSidebar();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

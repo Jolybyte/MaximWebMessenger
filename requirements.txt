@@ -1,0 +1,8 @@
+Flask
+Flask-SocketIO
+python-socketio
+eventlet
+firebase-admin
+python-dotenv
+Pillow
+gunicorn
