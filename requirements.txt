@@ -5,4 +5,3 @@ eventlet
 firebase-admin
 python-dotenv
 Pillow
-gunicorn
