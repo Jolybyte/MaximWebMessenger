@@ -5,37 +5,155 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#4CAF50">
+    <meta name="theme-color" content="#00ff66">
     <title>Maxim Messenger - Чат</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Font Awesome 6 - современные иконки вместо эмодзи -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <!-- Three.js core -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Эффекты Three.js (Bloom) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <style>
+        /* Дополнительные стили для иконок Font Awesome в чате */
+        .mobile-sidebar-toggle i {
+            font-size: 1.3rem;
+        }
+        
+        .chat-header h2 i {
+            margin-right: 8px;
+            color: #00ff88;
+        }
+        
+        .online-count i {
+            margin-right: 6px;
+            font-size: 0.75rem;
+        }
+        
+        .attach-btn i, .send-btn i {
+            font-size: 1.2rem;
+        }
+        
+        .user-status i {
+            margin-right: 4px;
+            font-size: 0.7rem;
+        }
+        
+        .status i {
+            margin-right: 4px;
+            font-size: 0.65rem;
+        }
+        
+        .menu-btn i {
+            font-size: 1.2rem;
+        }
+        
+        .close-sidebar-btn i {
+            font-size: 1.2rem;
+        }
+        
+        .users-section h3 i {
+            margin-right: 8px;
+            color: #00ff88;
+        }
+        
+        .btn-secondary i, .btn-danger i {
+            margin-right: 8px;
+        }
+        
+        .notification {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .notification i {
+            font-size: 1rem;
+        }
+        
+        .typing-indicator i {
+            margin-right: 8px;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+        
+        .status.online i {
+            color: #00ff88;
+        }
+        
+        .status.offline i {
+            color: #666;
+        }
+        
+        .btn i, .tab-btn i {
+            transition: transform 0.1s ease;
+        }
+        
+        .btn:active i, .tab-btn:active i {
+            transform: scale(0.95);
+        }
+
+        /* Переопределение стилей для sidebar слева */
+        .chat-container {
+            flex-direction: row;
+        }
+
+        .sidebar {
+            border-left: none;
+            border-right: 1px solid rgba(0, 255, 100, 0.5);
+            left: 0;
+            right: auto;
+        }
+
+        /* Для мобильной версии sidebar выезжает слева */
+        @media (max-width: 768px) {
+            .sidebar {
+                left: -100%;
+                right: auto;
+                border-right: 1px solid #00ff66;
+                border-left: none;
+            }
+            
+            .sidebar.open {
+                left: 0;
+                right: auto;
+            }
+            
+            .close-sidebar-btn {
+                left: auto;
+                right: 15px;
+            }
+        }
+
+        /* Анимация для сообщений */
+        .message {
+            animation: messageGlide 0.2s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+        }
+
+        @keyframes messageGlide {
+            from {
+                opacity: 0;
+                transform: translateY(12px) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="chat-container">
-        <!-- Основная область чата -->
-        <div class="chat-area">
-            <div class="chat-header">
-                <div class="chat-header-left">
-                    <button id="mobile-sidebar-toggle" class="mobile-sidebar-toggle" aria-label="Открыть меню участников">
-                        ☰
-                    </button>
-                    <h2>💬 Общий чат</h2>
-                </div>
-                <div class="chat-header-right">
-                    <span class="online-count" id="online-count">0 онлайн</span>
-                </div>
-            </div>
-            
-            <div id="messages-container" class="messages-container"></div>
-            
-            <div class="input-area">
-                <button id="attach-btn" class="attach-btn" title="Прикрепить изображение">📎</button>
-                <textarea id="message-input" placeholder="Напишите сообщение... (Enter для отправки)" rows="1"></textarea>
-                <button id="send-btn" class="send-btn">📤</button>
-            </div>
-        </div>
-        
-        <!-- Боковая панель с участниками -->
+        <!-- SIDEBAR - теперь слева -->
         <div id="sidebar" class="sidebar">
             <div class="sidebar-header">
                 <div class="user-info">
@@ -44,42 +162,89 @@
                     </div>
                     <div class="user-details">
                         <span id="username-display">{{ user.username }}</span>
-                        <span class="user-status">🟢 онлайн</span>
+                        <span class="user-status"><i class="fas fa-circle"></i> онлайн</span>
                     </div>
-                    <button class="menu-btn" id="menu-btn">⋮</button>
+                    <button class="menu-btn" id="menu-btn">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </button>
                 </div>
-                <button id="close-sidebar-btn" class="close-sidebar-btn" aria-label="Закрыть">✕</button>
+                <button id="close-sidebar-btn" class="close-sidebar-btn" aria-label="Закрыть">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
             
             <div class="separator"></div>
             
             <div class="users-section">
-                <h3>👥 Участники</h3>
+                <h3><i class="fas fa-users"></i> Участники</h3>
                 <div id="users-list" class="users-list"></div>
             </div>
         </div>
         
-        <!-- Оверлей для закрытия меню на мобильных -->
+        <!-- Основная область чата -->
+        <div class="chat-area">
+            <div class="chat-header">
+                <div class="chat-header-left">
+                    <button id="mobile-sidebar-toggle" class="mobile-sidebar-toggle" aria-label="Открыть меню участников">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2><i class="fas fa-comments"></i> Общий чат</h2>
+                </div>
+                <div class="chat-header-right">
+                    <span class="online-count" id="online-count">
+                        <i class="fas fa-circle"></i> 0 онлайн
+                    </span>
+                </div>
+            </div>
+            
+            <div id="messages-container" class="messages-container"></div>
+            
+            <div class="input-area">
+                <button id="attach-btn" class="attach-btn" title="Прикрепить изображение">
+                    <i class="fas fa-paperclip"></i>
+                </button>
+                <textarea id="message-input" placeholder="Напишите сообщение..." rows="1"></textarea>
+                <button id="send-btn" class="send-btn">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+        
         <div id="sidebar-overlay" class="sidebar-overlay"></div>
     </div>
     
     <div id="menu-modal" class="modal" style="display: none;">
         <div class="modal-content">
-            <h3>Меню пользователя</h3>
+            <h3><i class="fas fa-user-cog"></i> Меню пользователя</h3>
             <p>Пользователь: <strong id="modal-username"></strong></p>
-            <button id="change-avatar-menu" class="btn-secondary">📷 Сменить аватарку</button>
-            <button id="logout-btn" class="btn-secondary">🚪 Выйти</button>
-            <button id="delete-account-btn" class="btn-danger">⚠️ Удалить аккаунт</button>
-            <button id="close-modal" class="btn-secondary">Отмена</button>
+            <button id="change-avatar-menu" class="btn-secondary">
+                <i class="fas fa-camera"></i> Сменить аватарку
+            </button>
+            <button id="logout-btn" class="btn-secondary">
+                <i class="fas fa-sign-out-alt"></i> Выйти
+            </button>
+            <!-- 
+            <button id="delete-account-btn" class="btn-danger">
+                <i class="fas fa-trash-alt"></i> Удалить аккаунт
+            </button>
+            -->
+            <button id="close-modal" class="btn-secondary">
+                <i class="fas fa-times"></i> Отмена
+            </button>
         </div>
     </div>
     
     <div id="image-modal" class="modal" style="display: none;">
         <div class="modal-content image-modal">
             <img id="full-image" src="" alt="Full size">
-            <button id="close-image-modal" class="close-btn">✖</button>
+            <button id="close-image-modal" class="close-btn">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
     </div>
+    
+    <!-- Фоновый скрипт -->
+    <script src="{{ url_for('static', filename='js/background.js') }}"></script>
     
     <script>
         const socket = io();
@@ -87,7 +252,6 @@
         let typingTimeout = null;
         let isTyping = false;
         
-        // Загрузка истории сообщений
         async function loadMessages() {
             try {
                 const response = await fetch('/api/messages');
@@ -101,7 +265,6 @@
             }
         }
         
-        // Загрузка пользователей
         async function loadUsers() {
             try {
                 const response = await fetch('/api/users');
@@ -115,7 +278,6 @@
             }
         }
         
-        // Подсчет онлайн пользователей
         function updateOnlineCount(users) {
             let onlineCount = 0;
             for (const [userId, userData] of Object.entries(users)) {
@@ -125,42 +287,39 @@
             }
             const onlineCountElement = document.getElementById('online-count');
             if (onlineCountElement) {
-                onlineCountElement.textContent = `${onlineCount} онлайн`;
+                onlineCountElement.innerHTML = `<i class="fas fa-circle"></i> ${onlineCount} онлайн`;
             }
         }
         
-        // Обновление списка пользователей
         function updateUsersList(users) {
             const usersList = document.getElementById('users-list');
             usersList.innerHTML = '';
             
-            // Сначала добавляем текущего пользователя
             const currentUserItem = document.createElement('div');
             currentUserItem.className = 'user-item current-user';
             currentUserItem.innerHTML = `
                 <div class="user-avatar-small">
-                    <img src="${currentUser.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E'}" alt="${currentUser.username}">
+                    <img src="${currentUser.avatar_base64 || getDefaultAvatar()}" alt="${currentUser.username}">
                 </div>
                 <div class="user-info-text">
-                    <span class="username">${escapeHtml(currentUser.username)} (Вы)</span>
-                    <span class="status online">🟢 онлайн</span>
+                    <span class="username">${escapeHtml(currentUser.username)} <i class="fas fa-user-check" style="font-size: 0.7rem; color: #00ff88; margin-left: 4px;"></i> (Вы)</span>
+                    <span class="status online"><i class="fas fa-circle"></i> онлайн</span>
                 </div>
             `;
             usersList.appendChild(currentUserItem);
             
-            // Добавляем остальных пользователей
             for (const [userId, userData] of Object.entries(users)) {
                 if (userId !== currentUser.id) {
                     const userItem = document.createElement('div');
                     userItem.className = 'user-item';
                     userItem.innerHTML = `
                         <div class="user-avatar-small">
-                            <img src="${userData.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E'}" alt="${userData.username}">
+                            <img src="${userData.avatar_base64 || getDefaultAvatar()}" alt="${userData.username}">
                         </div>
                         <div class="user-info-text">
                             <span class="username">${escapeHtml(userData.username)}</span>
                             <span class="status ${userData.online ? 'online' : 'offline'}">
-                                ${userData.online ? '🟢 онлайн' : '⚫ оффлайн'}
+                                ${userData.online ? '<i class="fas fa-circle"></i> онлайн' : '<i class="fas fa-circle"></i> оффлайн'}
                             </span>
                         </div>
                     `;
@@ -169,7 +328,10 @@
             }
         }
         
-        // Отображение сообщения
+        function getDefaultAvatar() {
+            return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%2300cc66'/%3E%3Ctext x='50' y='70' text-anchor='middle' fill='white' font-size='45'%3E%3C/text%3E%3C/svg%3E";
+        }
+        
         function displayMessage(message) {
             const container = document.getElementById('messages-container');
             const isOwnMessage = message.user_id === currentUser.id;
@@ -194,13 +356,13 @@
             
             messageDiv.innerHTML = `
                 <div class="message-avatar">
-                    <img src="${message.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E'}" alt="${message.username}">
+                    <img src="${message.avatar_base64 || getDefaultAvatar()}" alt="${message.username}">
                 </div>
                 <div class="message-content">
-                    ${!isOwnMessage ? `<div class="message-sender">${escapeHtml(message.username)}</div>` : ''}
+                    ${!isOwnMessage ? `<div class="message-sender"><i class="fas fa-user" style="font-size: 0.6rem; margin-right: 4px;"></i>${escapeHtml(message.username)}</div>` : ''}
                     <div class="message-bubble">
                         ${contentHtml}
-                        <div class="message-time">${time}</div>
+                        <div class="message-time"><i class="far fa-clock" style="font-size: 0.6rem; margin-right: 4px;"></i>${time}</div>
                     </div>
                 </div>
             `;
@@ -209,7 +371,6 @@
             scrollToBottom();
         }
         
-        // Отправка сообщения
         async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
@@ -227,10 +388,9 @@
             }
         }
         
-        // Отправка изображения
         async function sendImage(file) {
             if (file.size > 5 * 1024 * 1024) {
-                alert('Изображение слишком большое. Максимальный размер 5MB');
+                showNotification('Изображение слишком большое. Максимальный размер 5MB', 'error');
                 return;
             }
             
@@ -241,20 +401,17 @@
             reader.readAsDataURL(file);
         }
         
-        // Прокрутка вниз
         function scrollToBottom() {
             const container = document.getElementById('messages-container');
             container.scrollTop = container.scrollHeight;
         }
         
-        // Эскейп HTML
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
         
-        // Показ полного изображения
         function showFullImage(imageSrc) {
             const modal = document.getElementById('image-modal');
             const fullImage = document.getElementById('full-image');
@@ -262,7 +419,6 @@
             modal.style.display = 'flex';
         }
         
-        // Управление мобильным меню
         function openSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebar-overlay');
@@ -279,7 +435,6 @@
             document.body.style.overflow = '';
         }
         
-        // Socket.io события
         socket.on('connect', () => {
             console.log('Connected to server');
         });
@@ -290,7 +445,7 @@
         
         socket.on('user_joined', (data) => {
             loadUsers();
-            showNotification(`${data.user.username} присоединился к чату`);
+            showNotification(`${data.user.username} присоединился к чату`, 'success');
         });
         
         socket.on('user_left', (data) => {
@@ -300,7 +455,7 @@
         socket.on('user_updated', (data) => {
             if (data.user_id === currentUser.id) {
                 currentUser = data.user;
-                document.getElementById('user-avatar').src = currentUser.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E';
+                document.getElementById('user-avatar').src = currentUser.avatar_base64 || getDefaultAvatar();
             }
             loadUsers();
         });
@@ -312,10 +467,12 @@
                     const indicator = document.createElement('div');
                     indicator.id = 'typing-indicator';
                     indicator.className = 'typing-indicator';
-                    indicator.textContent = `${data.username} печатает...`;
+                    indicator.innerHTML = `<i class="fas fa-pen-fade"></i> ${data.username} печатает...`;
                     const container = document.getElementById('messages-container');
                     container.appendChild(indicator);
                     scrollToBottom();
+                } else if (typingIndicator && !typingIndicator.innerHTML.includes(data.username)) {
+                    typingIndicator.innerHTML = `<i class="fas fa-pen-fade"></i> ${data.username} печатает...`;
                 }
             } else {
                 const indicator = document.getElementById('typing-indicator');
@@ -323,11 +480,11 @@
             }
         });
         
-        // Показ уведомления
-        function showNotification(message) {
+        function showNotification(message, type = 'info') {
             const notification = document.createElement('div');
             notification.className = 'notification';
-            notification.textContent = message;
+            const icon = type === 'error' ? '<i class="fas fa-exclamation-triangle"></i>' : '<i class="fas fa-info-circle"></i>';
+            notification.innerHTML = `${icon} <span>${message}</span>`;
             document.body.appendChild(notification);
             
             setTimeout(() => {
@@ -340,28 +497,23 @@
             }, 3000);
         }
         
-        // Обработчики UI
         document.getElementById('send-btn').addEventListener('click', sendMessage);
         
-        // Кнопка открытия меню
         const mobileSidebarToggle = document.getElementById('mobile-sidebar-toggle');
         if (mobileSidebarToggle) {
             mobileSidebarToggle.addEventListener('click', openSidebar);
         }
         
-        // Кнопка закрытия меню
         const closeSidebarBtn = document.getElementById('close-sidebar-btn');
         if (closeSidebarBtn) {
             closeSidebarBtn.addEventListener('click', closeSidebar);
         }
         
-        // Оверлей для закрытия
         const sidebarOverlay = document.getElementById('sidebar-overlay');
         if (sidebarOverlay) {
             sidebarOverlay.addEventListener('click', closeSidebar);
         }
         
-        // Обработка Enter
         document.getElementById('message-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -369,7 +521,6 @@
             }
         });
         
-        // Авто-расширение textarea
         document.getElementById('message-input').addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = Math.min(this.scrollHeight, 100) + 'px';
@@ -388,7 +539,6 @@
             }, 1000);
         });
         
-        // Прикрепление изображения
         document.getElementById('attach-btn').addEventListener('click', () => {
             const input = document.createElement('input');
             input.type = 'file';
@@ -400,7 +550,6 @@
             input.click();
         });
         
-        // Меню пользователя
         document.getElementById('menu-btn').addEventListener('click', () => {
             const modal = document.getElementById('menu-modal');
             document.getElementById('modal-username').textContent = currentUser.username;
@@ -420,7 +569,7 @@
                 const file = e.target.files[0];
                 if (file) {
                     if (file.size > 2 * 1024 * 1024) {
-                        alert('Изображение слишком большое. Максимальный размер 2MB');
+                        showNotification('Изображение слишком большое. Максимальный размер 2MB', 'error');
                         return;
                     }
                     
@@ -435,13 +584,13 @@
                             const data = await response.json();
                             if (data.success) {
                                 currentUser.avatar_base64 = e.target.result;
-                                document.getElementById('user-avatar').src = currentUser.avatar_base64;
-                                alert('Аватар успешно обновлен!');
+                                document.getElementById('user-avatar').src = currentUser.avatar_base64 || getDefaultAvatar();
+                                showNotification('Аватар успешно обновлен!', 'success');
                                 document.getElementById('menu-modal').style.display = 'none';
                                 loadUsers();
                             }
                         } catch (error) {
-                            alert('Ошибка при обновлении аватара');
+                            showNotification('Ошибка при обновлении аватара', 'error');
                         }
                     };
                     reader.readAsDataURL(file);
@@ -469,10 +618,10 @@
                     if (data.success) {
                         window.location.href = '/';
                     } else {
-                        alert('Ошибка при удалении аккаунта');
+                        showNotification('Ошибка при удалении аккаунта', 'error');
                     }
                 } catch (error) {
-                    alert('Ошибка при удалении аккаунта');
+                    showNotification('Ошибка при удалении аккаунта', 'error');
                 }
             }
         });
@@ -487,19 +636,16 @@
             }
         });
         
-        // Инициализация
-        document.getElementById('user-avatar').src = currentUser.avatar_base64 || 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%234CAF50\'/%3E%3Ctext x=\'50\' y=\'70\' text-anchor=\'middle\' fill=\'white\' font-size=\'40\'%3E👤%3C/text%3E%3C/svg%3E';
+        document.getElementById('user-avatar').src = currentUser.avatar_base64 || getDefaultAvatar();
         document.getElementById('username-display').textContent = currentUser.username;
         
         loadMessages();
         loadUsers();
         
-        // Обновление статуса при закрытии страницы
         window.addEventListener('beforeunload', () => {
             navigator.sendBeacon('/api/logout');
         });
         
-        // Свайп для закрытия меню
         let touchStartX = 0;
         document.addEventListener('touchstart', (e) => {
             touchStartX = e.touches[0].clientX;
@@ -510,7 +656,7 @@
             if (sidebar.classList.contains('open')) {
                 const touchEndX = e.changedTouches[0].clientX;
                 const diff = touchEndX - touchStartX;
-                if (diff < -50) {
+                if (diff > 50) {
                     closeSidebar();
                 }
             }
