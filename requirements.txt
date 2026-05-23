@@ -5,5 +5,5 @@ eventlet
 firebase-admin
 python-dotenv
 Pillow
-gunicorn
+gunicorn==21.2.0
 eventlet
