@@ -5,3 +5,4 @@ eventlet
 firebase-admin
 python-dotenv
 Pillow
+unicorn==2.1.4
